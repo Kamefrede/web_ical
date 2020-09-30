@@ -1,4 +1,4 @@
-//! # web_ical
+//! # `web_ical`
 //!
 //! `web_ical` is an esay iCalendar Rust library. It’s goals are to read and write ics web files (Google Calendar, Airbnb Calendar and more) data in a developer-friendly way.
 //!
@@ -31,11 +31,13 @@
 //!     println!("UTC now in a custom format is: {}", icals.events[0].dtstart.format("%a %b %e %T %Y"));
 //!}
 //! ```
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 extern crate chrono;
 
 use anyhow::Context;
 use chrono::Utc;
 use chrono::{DateTime, NaiveDateTime};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
@@ -46,6 +48,7 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```
+/// use chrono::{DateTime, Utc};
 /// let result_obj_aux: Result<DateTime<Utc>, String>;
 /// result_obj_aux = convert_datetime("20190522T232701Z", "%Y%m%dT%H%M%SZ".to_string());
 /// match result_obj_aux{
@@ -61,7 +64,7 @@ fn convert_datetime(value: &str, format: &str) -> anyhow::Result<DateTime<Utc>> 
 }
 
 ///store all events from iCalendar.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 // You should have called it Event, as it is only one event
 pub struct Events {
     pub dtstart: DateTime<Utc>,
@@ -83,11 +86,11 @@ impl Events {
     pub fn is_all_day(&self) -> bool {
         self.dtend.signed_duration_since(self.dtstart).num_hours() >= 24
     }
-    pub fn empty() -> Events {
+    pub fn empty() -> Self {
         let no_timezone =
             NaiveDateTime::parse_from_str("20190630T130000Z", "%Y%m%dT%H%M%SZ").unwrap();
         let date_tz: DateTime<Utc> = DateTime::from_utc(no_timezone, Utc);
-        Events {
+        Self {
             dtstart: date_tz,
             dtend: date_tz,
             dtstamp: date_tz,
@@ -105,7 +108,7 @@ impl Events {
 }
 
 ///store the iCalendar and add events from struct `Events`.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Calendar {
     pub prodid: String,
     pub version: String,
@@ -126,7 +129,7 @@ macro_rules! assign_if_ok {
 
 impl Calendar {
     ///Request HTTP or HTTPS to iCalendar url.
-    pub fn new(url: &str) -> anyhow::Result<Calendar> {
+    pub fn new(url: &str) -> anyhow::Result<Self> {
         let data = reqwest::get(url)
             .context("Could not make request")?
             .text()
@@ -135,7 +138,7 @@ impl Calendar {
     }
 
     ///Create a `Calendar` from text in memory.
-    pub fn new_from_data(data: &str) -> anyhow::Result<Calendar> {
+    pub fn new_from_data(data: &str) -> anyhow::Result<Self> {
         let text_data = data.lines().collect::<Vec<_>>();
         let mut struct_even: Vec<Events> = Vec::new();
 
@@ -203,22 +206,17 @@ impl Calendar {
                 "TRANSP" => {
                     even_temp.transp = value_cal;
                 }
-              
-                "DTSTART" => match convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ") {
-                    Ok(val) => {
+
+                "DTSTART" => {
+                    if let Ok(val) = convert_datetime(&value_cal, "%Y%m%dT%H%M%SZ") {
                         even_temp.dtstart = val;
                     }
-                    Err(_) => (),
-                },
+                }
                 "DTSTART;VALUE=DATE" => {
                     let aux_date = value_cal + "T000000Z";
-                    match convert_datetime(&aux_date, "%Y%m%dT%H%M%SZ") {
-                        Ok(val) => {
-                            even_temp.dtstart = val;
-                        }
-                        Err(_) => (),
-                    }
-
+                    if let Ok(val) = convert_datetime(&aux_date, "%Y%m%dT%H%M%SZ") {
+                        even_temp.dtstart = val;
+                    };
                 }
                 "DTEND;VALUE=DATE" => {
                     let time_cal = "T002611Z";
@@ -255,7 +253,7 @@ impl Calendar {
             }
         }
 
-        Ok(Calendar {
+        Ok(Self {
             prodid,
             version,
             calscale,
@@ -268,6 +266,7 @@ impl Calendar {
     ///Create your own iCalendar instance
     /// # Create an iCalendar
     /// ```
+    /// use web_ical::Calendar;
     /// let mut ical =  Calendar::create(
     ///                       "-//My Business Inc//My Calendar 70.9054//EN",
     ///                       "2.0",
@@ -276,6 +275,7 @@ impl Calendar {
     ///                       "example@gmail.com",
     ///                       "America/New_York");
     /// ```
+    #[must_use]
     pub fn create(
         prodid: &str,
         version: &str,
@@ -283,8 +283,8 @@ impl Calendar {
         method: &str,
         x_wr_calname: &str,
         x_wr_timezone: &str,
-    ) -> Calendar {
-        Calendar {
+    ) -> Self {
+        Self {
             prodid: prodid.to_string(),
             version: version.to_string(),
             calscale: calscale.to_string(),
